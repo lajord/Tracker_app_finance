@@ -280,16 +280,18 @@ export function useFinanceStore() {
     let next;
     if (existing) {
       const updated = { ...existing, amount_limit: Number(budget.amount_limit) };
-      next = state.budgets.map((b) => (b.id === existing.id ? updated : b));
       if (isSupabaseConfigured) {
-        await supabase.from('budgets').update({ amount_limit: updated.amount_limit }).eq('id', existing.id);
+        const { error } = await supabase.from('budgets').update({ amount_limit: updated.amount_limit }).eq('id', existing.id);
+        if (error) throw error;
       }
+      next = state.budgets.map((b) => (b.id === existing.id ? updated : b));
     } else {
       const newBudget = { id: crypto.randomUUID(), ...budget, amount_limit: Number(budget.amount_limit) };
-      next = [...state.budgets, newBudget];
       if (isSupabaseConfigured) {
-        await supabase.from('budgets').insert({ id: newBudget.id, category: newBudget.category, amount_limit: newBudget.amount_limit });
+        const { error } = await supabase.from('budgets').insert({ id: newBudget.id, category: newBudget.category, amount_limit: newBudget.amount_limit });
+        if (error) throw error;
       }
+      next = [...state.budgets, newBudget];
     }
     state = { ...state, budgets: next };
     notify();
@@ -297,7 +299,8 @@ export function useFinanceStore() {
 
   const deleteBudget = useCallback(async (id) => {
     if (isSupabaseConfigured) {
-      await supabase.from('budgets').delete().eq('id', id);
+      const { error } = await supabase.from('budgets').delete().eq('id', id);
+      if (error) throw error;
     }
     state = { ...state, budgets: state.budgets.filter((b) => b.id !== id) };
     notify();

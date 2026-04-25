@@ -30,7 +30,7 @@ export function InvestmentOperationForm({ investments, accounts, onSubmit, onCan
     if (!amount || isNaN(Number(amount))) return setError("Montant (Input) invalide");
     if (!price || isNaN(Number(price))) return setError("Prix unitaire invalide");
     if (!quantity || isNaN(Number(quantity))) return setError("Quantité achetée invalide");
-    if (!fees || isNaN(Number(fees))) return setError("Frais invalides");
+    if (fees !== '' && isNaN(Number(fees))) return setError("Frais invalides");
 
     setSubmitting(true);
     try {
@@ -43,7 +43,7 @@ export function InvestmentOperationForm({ investments, accounts, onSubmit, onCan
         amount: Number(amount),
         price: Number(price),
         quantity: Number(quantity),
-        fees: Number(fees),
+        fees: fees === '' ? 0 : Number(fees),
       });
       // reset forms
       setAmount('');
@@ -83,10 +83,10 @@ export function InvestmentOperationForm({ investments, accounts, onSubmit, onCan
 
       <div className="grid grid-cols-2 gap-4">
         <Input label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        <Input label="Input (€)" type="number" step="0.01" min="0" placeholder="ex: 50.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
-        <Input label="Prix U. (€)" type="number" step="0.01" min="0" placeholder="ex: 17.50" value={price} onChange={(e) => setPrice(e.target.value)} />
-        <Input label="Qté achetée" type="number" step="0.0001" min="0" placeholder="ex: 2.5" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-        <Input label="Frais (€)" type="number" step="0.01" min="0" placeholder="ex: 0.15" value={fees} onChange={(e) => setFees(e.target.value)} />
+        <Input label="Input (€)" type="number" step="any" min="0" placeholder="ex: 50.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        <Input label="Prix U. (€)" type="number" step="any" min="0" placeholder="ex: 17.50" value={price} onChange={(e) => setPrice(e.target.value)} />
+        <Input label="Qté achetée" type="number" step="any" placeholder="ex: 2.857142" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+        <Input label="Frais (€)" type="number" step="any" min="0" placeholder="0" value={fees} onChange={(e) => setFees(e.target.value)} />
       </div>
 
       {error && <div className="text-xs text-red-400">{error}</div>}
