@@ -199,11 +199,35 @@ export function useFinanceStore() {
             }
           });
 
+          // Push local budgets/investments to Supabase if remote tables are empty
+          let finalBudgets = remote.budgets;
+          if (remote.budgets.length === 0 && local.budgets.length > 0) {
+            for (const b of local.budgets) {
+              const { id, category, amount_limit } = b;
+              await supabase.from('budgets').upsert({ id, category, amount_limit: Number(amount_limit) }, { onConflict: 'id' });
+            }
+            finalBudgets = local.budgets;
+            console.log('[sync] pushed', local.budgets.length, 'budgets to Supabase');
+          }
+
+          let finalInvestments = remote.investments;
+          if (remote.investments.length === 0 && local.investments.length > 0) {
+            for (const inv of local.investments) {
+              const { id, name, platform, category, invested_amount, operations } = inv;
+              await supabase.from('investments').upsert(
+                { id, name, platform, category, invested_amount: Number(invested_amount), operations: operations || [] },
+                { onConflict: 'id' }
+              );
+            }
+            finalInvestments = local.investments;
+            console.log('[sync] pushed', local.investments.length, 'investments to Supabase');
+          }
+
           state = {
             transactions: remote.transactions,
             accounts: mergedAccounts,
-            budgets: remote.budgets.length > 0 ? remote.budgets : local.budgets,
-            investments: remote.investments.length > 0 ? remote.investments : local.investments,
+            budgets: finalBudgets,
+            investments: finalInvestments,
           };
         }
         notify();
