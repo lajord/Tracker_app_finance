@@ -15,25 +15,21 @@ export default function AccountsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Comptes & Patrimoine</h1>
+          <h1 className="text-2xl font-semibold text-white">Comptes et patrimoine</h1>
           <p className="text-sm text-zinc-400">Total de vos comptes et avoirs</p>
         </div>
-        <div className="text-right">
+        <div className="text-left sm:text-right">
           <div className="text-3xl font-bold text-indigo-400">{formatCurrency(wealth.total)}</div>
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {wealth.accounts.map((acc) => (
-          <Card key={acc.id} className="flex flex-col justify-between p-6">
-            <div>
-              <div className="text-lg font-semibold text-white">{acc.name}</div>
-            </div>
-            <div className="mt-6 text-3xl font-bold text-white">
-              {formatCurrency(acc.total)}
-            </div>
+        {wealth.accounts.map((account) => (
+          <Card key={account.id} className="flex flex-col justify-between">
+            <div className="text-lg font-semibold text-white">{account.name}</div>
+            <div className="mt-5 text-3xl font-bold text-white">{formatCurrency(account.total)}</div>
           </Card>
         ))}
       </div>

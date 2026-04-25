@@ -1,34 +1,44 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { formatCurrency, computeCategoryBreakdownRange } from '@/lib/finance';
-import { useMemo } from 'react';
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
 export function CategoryPieChart({ transactions, type = 'expense', startDate, endDate }) {
+  const [mounted, setMounted] = useState(false);
+  const data = useMemo(() => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
 
-  const data = useMemo(
-    () => {
-      // Pour éviter les plantages si la date est invalide pendant la saisie
-      const s = new Date(startDate);
-      const e = new Date(endDate);
-      if (isNaN(s) || isNaN(e)) return [];
-      return computeCategoryBreakdownRange(transactions || [], s, e, type);
-    },
-    [transactions, startDate, endDate, type]
-  );
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
+    return computeCategoryBreakdownRange(transactions || [], start, end, type);
+  }, [transactions, startDate, endDate, type]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setMounted(true), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex h-56 items-center justify-center text-center text-sm text-zinc-500 sm:h-64">
+        {type === 'income'
+          ? 'Aucun revenu enregistre sur cette periode'
+          : 'Aucune depense enregistree sur cette periode'}
+      </div>
+    );
+  }
+
+  if (!mounted) {
+    return <div className="h-[220px] w-full sm:h-[280px]" />;
+  }
 
   return (
-    <div className="flex flex-col gap-4">
-      {!data || data.length === 0 ? (
-      <div className="flex h-64 items-center justify-center text-sm text-zinc-500">
-        {type === 'income' ? 'Aucun revenu enregistré sur cette période' : 'Aucune dépense enregistrée sur cette période'}
-      </div>
-      ) : (
-      <div className="flex h-[280px] min-w-0 w-full items-center gap-4">
-        <div className="h-full min-w-0 flex-1">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={280}>
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+      <div className="h-[220px] min-w-0 w-full lg:h-[280px] lg:flex-1">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
           <PieChart>
             <Pie
               data={data}
@@ -36,8 +46,8 @@ export function CategoryPieChart({ transactions, type = 'expense', startDate, en
               nameKey="name"
               cx="50%"
               cy="50%"
-              innerRadius="60%"
-              outerRadius="80%"
+              innerRadius="58%"
+              outerRadius="82%"
               paddingAngle={2}
               stroke="none"
             >
@@ -57,24 +67,24 @@ export function CategoryPieChart({ transactions, type = 'expense', startDate, en
           </PieChart>
         </ResponsiveContainer>
       </div>
-      <div className="flex flex-1 flex-col gap-2 overflow-y-auto pr-2">
-        {data.map((cat, index) => (
-          <div key={cat.name || index} className="flex items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2 min-w-0">
+
+      <div className="flex w-full flex-col gap-2 lg:max-h-[280px] lg:flex-1 lg:overflow-y-auto lg:pr-2">
+        {data.map((category, index) => (
+          <div
+            key={category.name || index}
+            className="flex items-center justify-between gap-3 rounded-xl bg-zinc-950/40 px-3 py-2 text-xs"
+          >
+            <div className="flex min-w-0 items-center gap-2">
               <span
                 className="h-2.5 w-2.5 shrink-0 rounded-full"
                 style={{ backgroundColor: COLORS[index % COLORS.length] }}
               />
-              <span className="truncate text-zinc-300">
-                {cat.name}
-              </span>
+              <span className="truncate text-zinc-300">{category.name}</span>
             </div>
-            <span className="font-medium text-zinc-100">{formatCurrency(cat.total)}</span>
+            <span className="shrink-0 font-medium text-zinc-100">{formatCurrency(category.total)}</span>
           </div>
         ))}
       </div>
-      </div>
-      )}
     </div>
   );
 }

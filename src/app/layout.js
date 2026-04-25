@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata = {
   title: "Tracker Finance",
-  description: "Suivi intelligent de tes finances perso & pro",
+  description: "Suivi intelligent de tes finances perso et pro",
 };
 
 export default function RootLayout({ children }) {
@@ -26,8 +26,8 @@ export default function RootLayout({ children }) {
       <body className="min-h-full bg-zinc-950 text-zinc-100">
         <Sidebar />
         <MobileNav />
-        <main className="min-h-screen pb-20 lg:pb-0 lg:pl-60">
-          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <main className="min-h-screen pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-60">
+          <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8 lg:py-8">
             {children}
           </div>
         </main>

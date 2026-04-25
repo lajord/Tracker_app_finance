@@ -32,9 +32,7 @@ export default function InvestmentsPage() {
       targetInvestment = investments.find((investment) => investment.id === data.investmentId);
     }
 
-    if (!targetInvestment) {
-      throw new Error('Investissement introuvable');
-    }
+    if (!targetInvestment) throw new Error('Investissement introuvable');
 
     const newOperations = [
       ...(targetInvestment.operations || []),
@@ -61,34 +59,30 @@ export default function InvestmentsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-white">Investissements</h1>
-          <p className="text-sm text-zinc-400">Capital immobilise / investi</p>
+          <p className="text-sm text-zinc-400">Capital immobilise et suivi des operations</p>
         </div>
-        <div className="flex items-center gap-6">
-          <div className="text-right">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between xl:w-auto">
+          <div className="text-left sm:text-right">
             <div className="text-3xl font-bold text-emerald-400">{formatCurrency(total)}</div>
           </div>
-          <Button onClick={() => setShowForm(!showForm)}>{showForm ? 'Fermer' : '+ Operation'}</Button>
+          <Button onClick={() => setShowForm(!showForm)} className="w-full sm:w-auto">
+            {showForm ? 'Fermer' : 'Ajouter une operation'}
+          </Button>
         </div>
       </div>
 
       {investmentAccounts.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-2">
           {investmentAccounts.map((account) => (
-            <Card key={account.id} className="p-5">
-              <div className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">{account.name}</div>
+            <Card key={account.id}>
+              <div className="text-sm font-semibold uppercase tracking-wider text-zinc-400">{account.name}</div>
               <div className="mt-3 text-2xl font-bold text-white">{formatCurrency(account.total)}</div>
-              <div className="mt-3 flex gap-6">
-                <div>
-                  <div className="text-[11px] text-zinc-500 uppercase tracking-wide">Cash</div>
-                  <div className="text-sm font-semibold text-blue-400">{formatCurrency(account.cash)}</div>
-                </div>
-                <div>
-                  <div className="text-[11px] text-zinc-500 uppercase tracking-wide">Investi</div>
-                  <div className="text-sm font-semibold text-emerald-400">{formatCurrency(account.invested)}</div>
-                </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <MetricCard label="Cash" value={formatCurrency(account.cash)} valueClassName="text-blue-400" />
+                <MetricCard label="Investi" value={formatCurrency(account.invested)} valueClassName="text-emerald-400" />
               </div>
             </Card>
           ))}
@@ -96,8 +90,8 @@ export default function InvestmentsPage() {
       )}
 
       {showForm && (
-        <Card>
-          <div className="border-b border-white/5 p-4 font-semibold">Ajouter une operation d&apos;achat</div>
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-white/5 px-4 py-4 font-semibold sm:px-5">Ajouter une operation d&apos;achat</div>
           <InvestmentOperationForm
             investments={investments}
             accounts={accounts}
@@ -107,11 +101,12 @@ export default function InvestmentsPage() {
         </Card>
       )}
 
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-6">
         {investments?.map((investment) => {
           const operations = [...(investment.operations || [])].sort(
             (left, right) => new Date(left.date) - new Date(right.date)
           );
+
           let cumulativeQuantity = 0;
           let cumulativeAmount = 0;
 
@@ -130,66 +125,117 @@ export default function InvestmentsPage() {
 
           return (
             <Card key={investment.id} className="overflow-hidden border-white/10 p-0">
-              <div className="border-b border-white/5 bg-zinc-900/40 p-6">
-                <div className="inline-flex items-center rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">
+              <div className="border-b border-white/5 bg-zinc-900/40 p-4 sm:p-6">
+                <div className="inline-flex items-center rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-400">
                   {investment.category}
                 </div>
                 <div className="mt-2 text-xl font-semibold text-white">
                   {investment.name}
                   {investment.platform && (
-                    <span className="ml-2 text-sm font-normal text-zinc-500">sur {investment.platform}</span>
+                    <span className="mt-1 block text-sm font-normal text-zinc-500 sm:ml-2 sm:mt-0 sm:inline">
+                      sur {investment.platform}
+                    </span>
                   )}
                 </div>
-                <div className="mt-1 text-sm text-zinc-400">
+                <div className="mt-2 text-sm text-zinc-400">
                   Investissement total cumule :{' '}
                   <span className="font-medium text-emerald-400">{formatCurrency(investment.invested_amount)}</span>
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm text-zinc-400">
-                  <thead className="border-b border-white/5 bg-zinc-900 text-xs uppercase text-zinc-500">
-                    <tr>
-                      <th className="px-5 py-4 font-semibold">Date</th>
-                      <th className="px-5 py-4 font-semibold">Input (EUR)</th>
-                      <th className="px-5 py-4 font-semibold">Prix U. (EUR)</th>
-                      <th className="px-5 py-4 font-semibold">Qte achetee</th>
-                      <th className="px-5 py-4 font-semibold">Frais (EUR)</th>
-                      <th className="px-5 py-4 font-semibold">Qte nette</th>
-                      <th className="px-5 py-4 font-semibold text-indigo-300">Qte cumulee</th>
-                      <th className="px-5 py-4 font-semibold text-emerald-400">Invest. cumule (EUR)</th>
-                      <th className="px-5 py-4 font-semibold text-blue-300">Prix moy. achat (EUR)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.length === 0 ? (
-                      <tr>
-                        <td colSpan="9" className="px-5 py-8 text-center text-zinc-500">
-                          Aucune operation enregistree pour cet actif.
-                        </td>
-                      </tr>
-                    ) : (
-                      rows.map((row, index) => (
-                        <tr key={index} className="border-b border-white/5 transition-colors last:border-0 hover:bg-white/5">
-                          <td className="whitespace-nowrap px-5 py-3.5">{format(parseISO(row.date), 'dd/MM/yyyy')}</td>
-                          <td className="px-5 py-3.5 font-medium text-emerald-400/80">{row.amount.toFixed(2)}</td>
-                          <td className="px-5 py-3.5">{row.price.toFixed(2)}</td>
-                          <td className="px-5 py-3.5">{row.quantity}</td>
-                          <td className="px-5 py-3.5 text-zinc-500">{row.fees.toFixed(2)}</td>
-                          <td className="px-5 py-3.5">{row.quantity}</td>
-                          <td className="px-5 py-3.5 font-medium text-indigo-300/80">{row.cumulativeQuantity}</td>
-                          <td className="px-5 py-3.5 font-medium text-emerald-400">{row.cumulativeAmount.toFixed(2)}</td>
-                          <td className="px-5 py-3.5 font-medium text-blue-300/80">{row.averagePrice.toFixed(2)}</td>
+              {rows.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-zinc-500 sm:px-5">
+                  Aucune operation enregistree pour cet actif.
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-3 p-4 md:hidden">
+                    {rows.map((row, index) => (
+                      <div key={index} className="rounded-2xl border border-white/5 bg-zinc-950/30 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs uppercase tracking-wide text-zinc-500">Date</div>
+                            <div className="text-sm font-medium text-zinc-100">
+                              {format(parseISO(row.date), 'dd/MM/yyyy')}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs uppercase tracking-wide text-zinc-500">Input</div>
+                            <div className="text-sm font-semibold text-emerald-400">{row.amount.toFixed(2)} EUR</div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                          <MetricCard label="Prix U." value={`${row.price.toFixed(2)} EUR`} />
+                          <MetricCard label="Qte achetee" value={String(row.quantity)} />
+                          <MetricCard label="Frais" value={`${row.fees.toFixed(2)} EUR`} />
+                          <MetricCard label="Qte nette" value={String(row.quantity)} />
+                          <MetricCard label="Qte cumulee" value={String(row.cumulativeQuantity)} valueClassName="text-indigo-300" />
+                          <MetricCard
+                            label="Invest. cumule"
+                            value={`${row.cumulativeAmount.toFixed(2)} EUR`}
+                            valueClassName="text-emerald-400"
+                          />
+                          <MetricCard
+                            label="Prix moy."
+                            value={`${row.averagePrice.toFixed(2)} EUR`}
+                            valueClassName="text-blue-300"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="hidden overflow-x-auto md:block">
+                    <table className="w-full min-w-[860px] text-left text-sm text-zinc-400">
+                      <thead className="border-b border-white/5 bg-zinc-900 text-xs uppercase text-zinc-500">
+                        <tr>
+                          <th className="px-5 py-4 font-semibold">Date</th>
+                          <th className="px-5 py-4 font-semibold">Input (EUR)</th>
+                          <th className="px-5 py-4 font-semibold">Prix U. (EUR)</th>
+                          <th className="px-5 py-4 font-semibold">Qte achetee</th>
+                          <th className="px-5 py-4 font-semibold">Frais (EUR)</th>
+                          <th className="px-5 py-4 font-semibold">Qte nette</th>
+                          <th className="px-5 py-4 font-semibold text-indigo-300">Qte cumulee</th>
+                          <th className="px-5 py-4 font-semibold text-emerald-400">Invest. cumule (EUR)</th>
+                          <th className="px-5 py-4 font-semibold text-blue-300">Prix moy. achat (EUR)</th>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      </thead>
+                      <tbody>
+                        {rows.map((row, index) => (
+                          <tr
+                            key={index}
+                            className="border-b border-white/5 transition-colors last:border-0 hover:bg-white/5"
+                          >
+                            <td className="whitespace-nowrap px-5 py-3.5">{format(parseISO(row.date), 'dd/MM/yyyy')}</td>
+                            <td className="px-5 py-3.5 font-medium text-emerald-400/80">{row.amount.toFixed(2)}</td>
+                            <td className="px-5 py-3.5">{row.price.toFixed(2)}</td>
+                            <td className="px-5 py-3.5">{row.quantity}</td>
+                            <td className="px-5 py-3.5 text-zinc-500">{row.fees.toFixed(2)}</td>
+                            <td className="px-5 py-3.5">{row.quantity}</td>
+                            <td className="px-5 py-3.5 font-medium text-indigo-300/80">{row.cumulativeQuantity}</td>
+                            <td className="px-5 py-3.5 font-medium text-emerald-400">{row.cumulativeAmount.toFixed(2)}</td>
+                            <td className="px-5 py-3.5 font-medium text-blue-300/80">{row.averagePrice.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </Card>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, valueClassName = 'text-zinc-100' }) {
+  return (
+    <div className="rounded-xl bg-zinc-950/35 px-3 py-2.5">
+      <div className="text-[11px] uppercase tracking-wide text-zinc-500">{label}</div>
+      <div className={`mt-1 text-sm font-semibold ${valueClassName}`}>{value}</div>
     </div>
   );
 }

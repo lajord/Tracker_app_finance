@@ -1,12 +1,12 @@
 'use client';
 
 import { useMemo, useState, useCallback } from 'react';
-import { Card } from '@/components/ui/Card';
-import { useFinanceStore } from '@/lib/store';
-import { formatCurrency } from '@/lib/finance';
 import { format, parseISO, differenceInMonths } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { ChevronDown } from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { useFinanceStore } from '@/lib/store';
+import { formatCurrency } from '@/lib/finance';
 
 function getGroupKey(label) {
   const cleaned = (label || '')
@@ -39,11 +39,7 @@ function getDisplayName(_, transactions) {
 }
 
 export default function SubscriptionsPage() {
-  const {
-    transactions,
-    subscriptionPreferences,
-    setSubscriptionCancelled,
-  } = useFinanceStore();
+  const { transactions, subscriptionPreferences, setSubscriptionCancelled } = useFinanceStore();
   const [expandedId, setExpandedId] = useState(null);
   const [pendingKey, setPendingKey] = useState(null);
 
@@ -77,9 +73,7 @@ export default function SubscriptionsPage() {
     const groups = {};
     for (const transaction of subscriptions) {
       const key = getGroupKey(transaction.label);
-      if (!groups[key]) {
-        groups[key] = { key, transactions: [], total: 0 };
-      }
+      if (!groups[key]) groups[key] = { key, transactions: [], total: 0 };
       groups[key].transactions.push(transaction);
       groups[key].total += Number(transaction.amount);
     }
@@ -109,7 +103,7 @@ export default function SubscriptionsPage() {
     .reduce((sum, group) => sum + group.total, 0);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-white">Abonnements</h1>
@@ -120,9 +114,9 @@ export default function SubscriptionsPage() {
             )}
           </p>
         </div>
-        <div className="text-right">
-          <div className="text-3xl font-bold text-white tabular-nums">{formatCurrency(totalActive)}</div>
-          <div className="mt-1 text-xs text-zinc-500">Total cumule (actifs)</div>
+        <div className="text-left sm:text-right">
+          <div className="text-3xl font-bold tabular-nums text-white">{formatCurrency(totalActive)}</div>
+          <div className="mt-1 text-xs text-zinc-500">Total cumule des abonnements actifs</div>
         </div>
       </div>
 
@@ -142,17 +136,14 @@ export default function SubscriptionsPage() {
 
               return (
                 <div key={group.key} className={`transition-opacity ${isCancelled ? 'opacity-40' : ''}`}>
-                  <div className="flex items-center gap-4 px-5 py-3">
+                  <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                     <button
+                      type="button"
                       onClick={() => setExpandedId(isExpanded ? null : group.key)}
-                      className="flex min-w-0 flex-1 items-center gap-4 text-left"
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
                     >
                       <div className="min-w-0 flex-1">
-                        <div
-                          className={`text-sm font-medium truncate ${
-                            isCancelled ? 'text-zinc-500 line-through' : 'text-zinc-100'
-                          }`}
-                        >
+                        <div className={`truncate text-sm font-medium ${isCancelled ? 'text-zinc-500 line-through' : 'text-zinc-100'}`}>
                           {group.displayName}
                         </div>
                         <div className="text-[11px] text-zinc-500">
@@ -160,25 +151,22 @@ export default function SubscriptionsPage() {
                         </div>
                       </div>
 
-                      <div className="text-right shrink-0">
-                        <div className="text-sm font-medium text-zinc-200 tabular-nums">{formatCurrency(group.total)}</div>
-                        <div className="text-[11px] text-zinc-500 tabular-nums">
-                          ~ {formatCurrency(group.avgPerMonth)}/mois
-                        </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-sm font-medium tabular-nums text-zinc-200">{formatCurrency(group.total)}</div>
+                        <div className="text-[11px] tabular-nums text-zinc-500">~ {formatCurrency(group.avgPerMonth)}/mois</div>
                       </div>
 
                       <ChevronDown
-                        className={`h-3.5 w-3.5 shrink-0 text-zinc-600 transition-transform ${
-                          isExpanded ? 'rotate-180' : ''
-                        }`}
+                        className={`h-4 w-4 shrink-0 text-zinc-600 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                       />
                     </button>
 
                     <button
+                      type="button"
                       onClick={() => toggleCancelled(group.key, !isCancelled)}
                       disabled={isSaving}
                       title={isCancelled ? 'Reactiver' : 'Marquer comme resilie'}
-                      className={`shrink-0 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                      className={`shrink-0 rounded-xl px-3 py-2 text-xs font-medium transition-colors ${
                         isCancelled
                           ? 'text-emerald-400 hover:bg-emerald-500/10'
                           : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'
@@ -189,21 +177,19 @@ export default function SubscriptionsPage() {
                   </div>
 
                   {isExpanded && (
-                    <div className="bg-zinc-900/30 px-5 pb-3">
-                      {group.transactions.map((transaction) => (
-                        <div
-                          key={transaction.id}
-                          className="flex items-center justify-between py-1.5 text-[12px] text-zinc-500"
-                        >
-                          <span className="w-24 shrink-0">
-                            {format(parseISO(transaction.date), 'dd/MM/yyyy')}
-                          </span>
-                          <span className="flex-1 truncate text-zinc-400">{transaction.label}</span>
-                          <span className="ml-3 shrink-0 tabular-nums text-zinc-400">
-                            {formatCurrency(transaction.amount)}
-                          </span>
-                        </div>
-                      ))}
+                    <div className="bg-zinc-900/30 px-4 pb-4 sm:px-5">
+                      <div className="space-y-2">
+                        {group.transactions.map((transaction) => (
+                          <div
+                            key={transaction.id}
+                            className="rounded-xl border border-white/5 bg-zinc-950/20 px-3 py-2 text-xs text-zinc-500 sm:flex sm:items-center sm:justify-between"
+                          >
+                            <div className="font-medium text-zinc-400">{format(parseISO(transaction.date), 'dd/MM/yyyy')}</div>
+                            <div className="mt-1 min-w-0 truncate text-zinc-400 sm:mt-0 sm:px-4">{transaction.label}</div>
+                            <div className="mt-1 tabular-nums text-zinc-300 sm:mt-0">{formatCurrency(transaction.amount)}</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>

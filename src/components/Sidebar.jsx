@@ -12,12 +12,12 @@ import {
 } from 'lucide-react';
 
 const nav = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
-  { href: '/accounts', label: 'Comptes', icon: Wallet },
-  { href: '/investments', label: 'Investissements', icon: TrendingUp },
-  { href: '/budgets', label: 'Budgets', icon: Target },
-  { href: '/subscriptions', label: 'Abonnements', icon: RefreshCw },
+  { href: '/', label: 'Dashboard', shortLabel: 'Accueil', icon: LayoutDashboard },
+  { href: '/transactions', label: 'Transactions', shortLabel: 'Tx', icon: ArrowLeftRight },
+  { href: '/accounts', label: 'Comptes', shortLabel: 'Comptes', icon: Wallet },
+  { href: '/investments', label: 'Investissements', shortLabel: 'Invest', icon: TrendingUp },
+  { href: '/budgets', label: 'Budgets', shortLabel: 'Budgets', icon: Target },
+  { href: '/subscriptions', label: 'Abonnements', shortLabel: 'Abos', icon: RefreshCw },
 ];
 
 export function Sidebar() {
@@ -57,7 +57,7 @@ export function Sidebar() {
 
       <div className="border-t border-white/5 p-3">
         <div className="rounded-xl bg-zinc-900/80 p-3">
-          <div className="text-[11px] text-zinc-500">Mode démo</div>
+          <div className="text-[11px] text-zinc-500">Mode demo</div>
           <div className="mt-0.5 text-xs text-zinc-300">
             Connectez Supabase via <code className="text-indigo-400">.env.local</code>
           </div>
@@ -69,23 +69,29 @@ export function Sidebar() {
 
 export function MobileNav() {
   const pathname = usePathname();
+
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-white/5 bg-zinc-950/90 backdrop-blur px-2 py-2 lg:hidden">
-      {nav.map((item) => {
-        const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-[10px] ${
-              active ? 'text-indigo-400' : 'text-zinc-500'
-            }`}
-          >
-            <item.icon className="h-5 w-5" />
-            <span>{item.label}</span>
-          </Link>
-        );
-      })}
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-zinc-950/95 backdrop-blur lg:hidden">
+      <div className="no-scrollbar flex gap-1 overflow-x-auto px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+        {nav.map((item) => {
+          const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-label={item.label}
+              className={`flex min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-colors ${
+                active
+                  ? 'bg-indigo-500/15 text-indigo-300'
+                  : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200'
+              }`}
+            >
+              <item.icon className="h-[18px] w-[18px]" />
+              <span className="truncate">{item.shortLabel}</span>
+            </Link>
+          );
+        })}
+      </div>
     </nav>
   );
 }
