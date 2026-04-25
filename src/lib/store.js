@@ -1,369 +1,705 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import {
-  mockTransactions,
-  mockAccounts,
-  mockBudgets,
-  mockInvestments,
-} from './mock-data';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { mockAccounts, mockInvestments } from './mock-data';
 import { supabase, isSupabaseConfigured } from './supabase';
 
-const STORAGE_KEY = 'tracker_finance_state_v3';
-const SYNCED_KEY = 'tracker_supabase_synced';
+const LEGACY_FINANCE_STORAGE_KEY = 'tracker_finance_state_v3';
+const LEGACY_SYNCED_KEY = 'tracker_supabase_synced';
+const LEGACY_CANCELLED_SUBS_KEY = 'tracker_cancelled_subs';
 
-// ---------------------------------------------------------------------------
-// localStorage helpers
-// ---------------------------------------------------------------------------
-function loadState() {
+function createInitialState() {
+  return {
+    transactions: [],
+    accounts: [],
+    budgets: [],
+    investments: [],
+    subscriptionPreferences: [],
+    isLoading: isSupabaseConfigured,
+    initializationError: null,
+    isSupabaseConfigured,
+  };
+}
+
+const SERVER_SNAPSHOT = createInitialState();
+let state = createInitialState();
+let isInitialized = false;
+let initializationPromise = null;
+const listeners = new Set();
+
+function emit() {
+  listeners.forEach((listener) => listener());
+}
+
+function setState(next) {
+  state = typeof next === 'function' ? next(state) : next;
+  emit();
+}
+
+function subscribe(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function getSnapshot() {
+  return state;
+}
+
+function getServerSnapshot() {
+  return SERVER_SNAPSHOT;
+}
+
+function readLegacyJson(key) {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-function saveState(s) {
+function clearLegacyBrowserState() {
   if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-  } catch { /* ignore */ }
+  clearLegacyFinanceState();
+  clearLegacyCancelledSubscriptionsState();
 }
 
-// ---------------------------------------------------------------------------
-// Build initial state from localStorage / mock data (offline fallback)
-// ---------------------------------------------------------------------------
-function getLocalState() {
-  const saved = loadState();
-  if (saved) {
-    const mergedAccounts = [...(saved.accounts || [])]
-      .filter(a => a.name !== 'Revolut' && a.id !== '11111111-1111-1111-1111-111111111111')
-      .map(a => {
-        if (a.id === '00000000-0000-0000-0000-000000000000' || a.name === 'Compte Principal') {
-          return { ...a, name: 'Credit Agricole compte' };
-        }
-        if (a.id === '22222222-2222-2222-2222-222222222222' ||
-            a.name === 'Compte Investissement' ||
-            a.name === 'Binance et Trade Republic') {
-          return { ...a, id: '44444444-4444-4444-4444-444444444444', name: 'Trade Republic' };
-        }
-        return a;
-      });
-    mockAccounts.forEach(mAcc => {
-      if (!mergedAccounts.find(a => a.id === mAcc.id)) mergedAccounts.push(mAcc);
-    });
+function clearLegacyFinanceState() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(LEGACY_FINANCE_STORAGE_KEY);
+  window.localStorage.removeItem(LEGACY_SYNCED_KEY);
+}
 
-    const mergedInvestments = [...(saved.investments || [])];
-    mockInvestments.forEach(mInv => {
-      const existing = mergedInvestments.find(i => i.id === mInv.id);
-      if (!existing) mergedInvestments.push(mInv);
-      else if (!existing.platform) existing.platform = 'Trade Republic';
-    });
+function clearLegacyCancelledSubscriptionsState() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(LEGACY_CANCELLED_SUBS_KEY);
+}
 
-    return {
-      transactions: saved.transactions || mockTransactions,
-      accounts: mergedAccounts,
-      budgets: saved.budgets || mockBudgets,
-      investments: mergedInvestments,
-    };
-  }
+function normalizeDateValue(value) {
+  if (!value) return new Date().toISOString().slice(0, 10);
+  const asString = String(value);
+  return asString.includes('T') ? asString.slice(0, 10) : asString;
+}
+
+function normalizeLegacyAccounts(savedAccounts = []) {
+  const mergedAccounts = [...savedAccounts]
+    .filter((account) => account.name !== 'Revolut' && account.id !== '11111111-1111-1111-1111-111111111111')
+    .map((account) => {
+      if (account.id === '00000000-0000-0000-0000-000000000000' || account.name === 'Compte Principal') {
+        return { ...account, name: 'Credit Agricole compte' };
+      }
+
+      if (
+        account.id === '22222222-2222-2222-2222-222222222222' ||
+        account.name === 'Compte Investissement' ||
+        account.name === 'Binance et Trade Republic'
+      ) {
+        return { ...account, id: '44444444-4444-4444-4444-444444444444', name: 'Trade Republic' };
+      }
+
+      return account;
+    })
+    .map((account) => ({
+      ...account,
+      currency: account.currency || 'EUR',
+      initial_balance: Number(account.initial_balance || 0),
+    }));
+
+  mockAccounts.forEach((account) => {
+    if (!mergedAccounts.find((existing) => existing.id === account.id)) {
+      mergedAccounts.push(account);
+    }
+  });
+
+  return mergedAccounts;
+}
+
+function normalizeLegacyInvestments(savedInvestments = []) {
+  const mergedInvestments = [...savedInvestments].map((investment) => ({
+    ...investment,
+    invested_amount: Number(investment.invested_amount || 0),
+    operations: Array.isArray(investment.operations) ? investment.operations : [],
+  }));
+
+  mockInvestments.forEach((investment) => {
+    const existing = mergedInvestments.find((candidate) => candidate.id === investment.id);
+    if (!existing) {
+      mergedInvestments.push(investment);
+    } else if (!existing.platform) {
+      existing.platform = 'Trade Republic';
+    }
+  });
+
+  return mergedInvestments;
+}
+
+function normalizeLegacyState(saved) {
+  if (!saved) return null;
+
   return {
-    transactions: mockTransactions,
-    accounts: mockAccounts,
-    budgets: mockBudgets,
-    investments: mockInvestments,
+    transactions: Array.isArray(saved.transactions)
+      ? saved.transactions.map((transaction) => ({
+          ...transaction,
+          amount: Number(transaction.amount || 0),
+          date: normalizeDateValue(transaction.date),
+          source: transaction.source || 'manual',
+          currency: transaction.currency || 'EUR',
+        }))
+      : [],
+    accounts: normalizeLegacyAccounts(saved.accounts || []),
+    budgets: Array.isArray(saved.budgets)
+      ? saved.budgets.map((budget) => ({
+          ...budget,
+          amount_limit: Number(budget.amount_limit || 0),
+        }))
+      : [],
+    investments: normalizeLegacyInvestments(saved.investments || []),
   };
 }
 
-// ---------------------------------------------------------------------------
-// Load all data from Supabase
-// ---------------------------------------------------------------------------
+function normalizeAccountPayload(account) {
+  return {
+    id: account.id,
+    name: account.name,
+    type: account.type,
+    currency: account.currency || 'EUR',
+    initial_balance: Number(account.initial_balance || 0),
+  };
+}
+
+function normalizeTransactionPayload(transaction) {
+  return {
+    id: transaction.id || crypto.randomUUID(),
+    label: transaction.label,
+    amount: Number(transaction.amount || 0),
+    date: normalizeDateValue(transaction.date),
+    category: transaction.category || null,
+    account_id: transaction.account_id || null,
+    source: transaction.source || 'manual',
+    currency: transaction.currency || 'EUR',
+    external_id: transaction.external_id || null,
+  };
+}
+
+function normalizeBudgetPayload(budget) {
+  return {
+    id: budget.id || crypto.randomUUID(),
+    category: budget.category,
+    amount_limit: Number(budget.amount_limit || 0),
+  };
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || '');
+}
+
+function buildDeterministicUuid(seed) {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x811c9dc5;
+  let h3 = 0x811c9dc5;
+  let h4 = 0x811c9dc5;
+
+  for (let index = 0; index < seed.length; index += 1) {
+    const code = seed.charCodeAt(index);
+    h1 = Math.imul(h1 ^ code, 0x01000193);
+    h2 = Math.imul(h2 ^ (code + index), 0x01000193);
+    h3 = Math.imul(h3 ^ (code + index * 7), 0x01000193);
+    h4 = Math.imul(h4 ^ (code + index * 13), 0x01000193);
+  }
+
+  const hex = [h1, h2, h3, h4]
+    .map((value) => (value >>> 0).toString(16).padStart(8, '0'))
+    .join('');
+
+  const chars = hex.slice(0, 32).split('');
+  chars[12] = '4';
+  chars[16] = ['8', '9', 'a', 'b'][parseInt(chars[16], 16) % 4];
+
+  const normalized = chars.join('');
+  return `${normalized.slice(0, 8)}-${normalized.slice(8, 12)}-${normalized.slice(12, 16)}-${normalized.slice(16, 20)}-${normalized.slice(20, 32)}`;
+}
+
+function normalizeLegacyInvestmentId(investment) {
+  if (isUuid(investment.id)) return investment.id;
+
+  const legacySeed = [
+    investment.id,
+    investment.name,
+    investment.platform,
+    investment.category,
+  ]
+    .filter(Boolean)
+    .join('::');
+
+  return buildDeterministicUuid(legacySeed || 'legacy-investment');
+}
+
+function normalizeInvestmentPayload(investment) {
+  return {
+    id: isUuid(investment.id) ? investment.id : normalizeLegacyInvestmentId(investment),
+    name: investment.name,
+    platform: investment.platform || null,
+    category: investment.category || 'ETF',
+    invested_amount: Number(investment.invested_amount || 0),
+    operations: Array.isArray(investment.operations) ? investment.operations : [],
+  };
+}
+
+function isMissingTableError(error) {
+  return (
+    error?.code === '42P01' ||
+    error?.code === 'PGRST205' ||
+    /relation .* does not exist/i.test(error?.message || '') ||
+    /could not find the table .* in the schema cache/i.test(error?.message || '')
+  );
+}
+
+async function loadSubscriptionPreferences() {
+  const { data, error } = await supabase
+    .from('subscription_preferences')
+    .select('*')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    if (isMissingTableError(error)) {
+      console.warn('[store] subscription_preferences table missing, defaulting to empty preferences');
+      return [];
+    }
+    throw error;
+  }
+
+  return data || [];
+}
+
 async function loadFromSupabase() {
-  const [txRes, accRes, budRes, invRes] = await Promise.all([
+  const [txRes, accRes, budRes, invRes, subscriptionPreferences] = await Promise.all([
     supabase.from('transactions').select('*').order('date', { ascending: false }),
-    supabase.from('accounts').select('*'),
-    supabase.from('budgets').select('*'),
-    supabase.from('investments').select('*'),
+    supabase.from('accounts').select('*').order('name'),
+    supabase.from('budgets').select('*').order('category'),
+    supabase.from('investments').select('*').order('name'),
+    loadSubscriptionPreferences(),
   ]);
+
+  const coreErrors = [txRes.error, accRes.error, budRes.error, invRes.error].filter(Boolean);
+  if (coreErrors.length > 0) {
+    throw coreErrors[0];
+  }
+
   return {
     transactions: txRes.data || [],
     accounts: accRes.data || [],
     budgets: budRes.data || [],
     investments: invRes.data || [],
+    subscriptionPreferences,
   };
 }
 
-// ---------------------------------------------------------------------------
-// One-time sync: push localStorage data to Supabase
-// ---------------------------------------------------------------------------
-async function syncLocalToSupabase(local) {
-  if (typeof window === 'undefined') return;
-  if (window.localStorage.getItem(SYNCED_KEY)) return;
+async function migrateLegacyBrowserState() {
+  if (typeof window === 'undefined' || !isSupabaseConfigured) return;
 
-  let errors = 0;
+  const legacyFinance = normalizeLegacyState(readLegacyJson(LEGACY_FINANCE_STORAGE_KEY));
+  const legacyCancelled = readLegacyJson(LEGACY_CANCELLED_SUBS_KEY);
+  const cancelledKeys = Array.isArray(legacyCancelled)
+    ? [...new Set(legacyCancelled.filter((key) => typeof key === 'string' && key.trim()))]
+    : [];
 
-  for (const acc of local.accounts) {
-    const { id, name, type, currency } = acc;
-    const { error } = await supabase.from('accounts').upsert({ id, name, type, currency }, { onConflict: 'id' });
-    if (error) { console.error('[sync] account error:', acc.name, error.message); errors++; }
+  if (!legacyFinance && cancelledKeys.length === 0) {
+    window.localStorage.removeItem(LEGACY_SYNCED_KEY);
+    return;
   }
 
-  for (const tx of local.transactions) {
-    const { id, label, amount, date, category, account_id, source, currency, external_id } = tx;
-    const { error } = await supabase.from('transactions').upsert(
-      { id, label, amount: Number(amount), date, category, account_id, source: source || 'manual', currency: currency || 'EUR', external_id },
-      { onConflict: 'id' }
+  let financeErrors = 0;
+  let cancelledPreferenceErrors = 0;
+  let canClearCancelledPreferences = cancelledKeys.length === 0;
+
+  if (legacyFinance) {
+    for (const account of legacyFinance.accounts) {
+      const { error } = await supabase
+        .from('accounts')
+        .upsert(normalizeAccountPayload(account), { onConflict: 'id' });
+      if (error) {
+        console.error('[migration] account error:', account.name, error.message);
+        financeErrors += 1;
+      }
+    }
+
+    for (const transaction of legacyFinance.transactions) {
+      const payload = normalizeTransactionPayload(transaction);
+      const { error } = await supabase
+        .from('transactions')
+        .upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error('[migration] transaction error:', payload.label, error.message);
+        financeErrors += 1;
+      }
+    }
+
+    for (const budget of legacyFinance.budgets) {
+      const payload = normalizeBudgetPayload(budget);
+      const { error } = await supabase
+        .from('budgets')
+        .upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error('[migration] budget error:', payload.category, error.message);
+        financeErrors += 1;
+      }
+    }
+
+    for (const investment of legacyFinance.investments) {
+      const payload = normalizeInvestmentPayload(investment);
+      const { error } = await supabase
+        .from('investments')
+        .upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error('[migration] investment error:', payload.name, error.message);
+        financeErrors += 1;
+      }
+    }
+  }
+
+  for (const key of cancelledKeys) {
+    const { error } = await supabase.from('subscription_preferences').upsert(
+      {
+        group_key: key,
+        is_cancelled: true,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'group_key' }
     );
-    if (error) { console.error('[sync] transaction error:', label, error.message); errors++; }
+
+    if (error) {
+      if (isMissingTableError(error)) {
+        console.warn('[migration] subscription_preferences table missing, skipping cancelled subscriptions migration');
+        canClearCancelledPreferences = false;
+        break;
+      }
+      console.error('[migration] subscription preference error:', key, error.message);
+      cancelledPreferenceErrors += 1;
+    }
   }
 
-  for (const b of local.budgets) {
-    const { id, category, amount_limit } = b;
-    const { error } = await supabase.from('budgets').upsert(
-      { id, category, amount_limit: Number(amount_limit) },
-      { onConflict: 'id' }
-    );
-    if (error) { console.error('[sync] budget error:', category, error.message); errors++; }
+  if (financeErrors === 0 && legacyFinance) {
+    clearLegacyFinanceState();
   }
 
-  for (const inv of local.investments) {
-    const { id, name, platform, category, invested_amount, operations } = inv;
-    const { error } = await supabase.from('investments').upsert(
-      { id, name, platform, category, invested_amount: Number(invested_amount), operations: operations || [] },
-      { onConflict: 'id' }
-    );
-    if (error) { console.error('[sync] investment error:', name, error.message); errors++; }
+  if (cancelledPreferenceErrors === 0 && canClearCancelledPreferences) {
+    clearLegacyCancelledSubscriptionsState();
   }
 
-  if (errors === 0) {
-    window.localStorage.setItem(SYNCED_KEY, 'true');
-    console.log('[sync] localStorage data pushed to Supabase successfully');
+  if (financeErrors === 0 && cancelledPreferenceErrors === 0 && canClearCancelledPreferences) {
+    console.log('[migration] legacy browser state migrated to Supabase');
   } else {
-    console.warn(`[sync] completed with ${errors} errors — will retry on next load`);
+    const totalErrors = financeErrors + cancelledPreferenceErrors;
+    console.warn(`[migration] completed with ${totalErrors} error(s); some legacy browser state was kept for retry`);
   }
 }
 
-// ---------------------------------------------------------------------------
-// Shared state + subscribers
-// ---------------------------------------------------------------------------
-let state = null;
-let supabaseLoaded = false;
-const listeners = new Set();
-
-function ensureInit() {
-  if (state === null) state = getLocalState();
-}
-
-function notify() {
-  saveState(state);
-  listeners.forEach((l) => l(state));
-}
-
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
-export function useFinanceStore() {
-  const [snapshot, setSnapshot] = useState(() => {
-    ensureInit();
+async function initializeStore() {
+  if (!isSupabaseConfigured || !supabase) {
+    isInitialized = true;
+    setState({
+      ...createInitialState(),
+      isLoading: false,
+      initializationError: 'Supabase n’est pas configuré.',
+    });
     return state;
-  });
+  }
+
+  setState((current) => ({
+    ...current,
+    isLoading: true,
+    initializationError: null,
+  }));
+
+  try {
+    await migrateLegacyBrowserState();
+    const remoteState = await loadFromSupabase();
+
+    setState({
+      ...createInitialState(),
+      ...remoteState,
+      isLoading: false,
+      initializationError: null,
+    });
+
+    isInitialized = true;
+    return remoteState;
+  } catch (error) {
+    setState((current) => ({
+      ...current,
+      isLoading: false,
+      initializationError: error?.message || 'Impossible de charger les données Supabase.',
+    }));
+    throw error;
+  }
+}
+
+function ensureInitialized() {
+  if (isInitialized) return Promise.resolve(state);
+  if (!initializationPromise) {
+    initializationPromise = initializeStore().finally(() => {
+      initializationPromise = null;
+    });
+  }
+  return initializationPromise;
+}
+
+function requireSupabase() {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase n’est pas configuré.');
+  }
+}
+
+export function useFinanceStore() {
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
-    ensureInit();
-    setSnapshot(state);
-    const listener = (s) => setSnapshot({ ...s });
-    listeners.add(listener);
-
-    if (isSupabaseConfigured && !supabaseLoaded) {
-      supabaseLoaded = true;
-      const local = { ...state };
-
-      loadFromSupabase().then(async (remote) => {
-        const hasRemoteData = remote.transactions.length > 0 || remote.accounts.length > 0;
-
-        if (!hasRemoteData && local.transactions.length > 0) {
-          // Supabase empty, localStorage has data → push to Supabase
-          await syncLocalToSupabase(local);
-          state = local;
-        } else if (hasRemoteData) {
-          // Supabase has data → source of truth
-          const mergedAccounts = [...remote.accounts];
-          mockAccounts.forEach(mAcc => {
-            if (!mergedAccounts.find(a => a.id === mAcc.id)) {
-              mergedAccounts.push(mAcc);
-              const { id, name, type, currency } = mAcc;
-              supabase.from('accounts').upsert({ id, name, type, currency }, { onConflict: 'id' });
-            }
-          });
-
-          // Push local budgets/investments to Supabase if remote tables are empty
-          let finalBudgets = remote.budgets;
-          if (remote.budgets.length === 0 && local.budgets.length > 0) {
-            for (const b of local.budgets) {
-              const { id, category, amount_limit } = b;
-              await supabase.from('budgets').upsert({ id, category, amount_limit: Number(amount_limit) }, { onConflict: 'id' });
-            }
-            finalBudgets = local.budgets;
-            console.log('[sync] pushed', local.budgets.length, 'budgets to Supabase');
-          }
-
-          let finalInvestments = remote.investments;
-          if (remote.investments.length === 0 && local.investments.length > 0) {
-            for (const inv of local.investments) {
-              const { id, name, platform, category, invested_amount, operations } = inv;
-              await supabase.from('investments').upsert(
-                { id, name, platform, category, invested_amount: Number(invested_amount), operations: operations || [] },
-                { onConflict: 'id' }
-              );
-            }
-            finalInvestments = local.investments;
-            console.log('[sync] pushed', local.investments.length, 'investments to Supabase');
-          }
-
-          state = {
-            transactions: remote.transactions,
-            accounts: mergedAccounts,
-            budgets: finalBudgets,
-            investments: finalInvestments,
-          };
-        }
-        notify();
-      }).catch(err => {
-        console.error('[store] Failed to load from Supabase:', err);
-      });
-    }
-
-    return () => listeners.delete(listener);
+    ensureInitialized().catch((error) => {
+      console.error('[store] initialization failed:', error);
+    });
   }, []);
 
-  // ---- Accounts ----
-  const addAccount = useCallback(async (acc) => {
-    const newAcc = { id: crypto.randomUUID(), currency: 'EUR', ...acc };
-    if (isSupabaseConfigured) {
-      const { id, name, type, currency } = newAcc;
-      const { data, error } = await supabase
-        .from('accounts').insert({ id, name, type, currency }).select().single();
-      if (error) throw error;
-      state = { ...state, accounts: [data, ...state.accounts] };
-    } else {
-      state = { ...state, accounts: [newAcc, ...state.accounts] };
-    }
-    notify();
-    return newAcc;
-  }, []);
+  const addAccount = useCallback(async (account) => {
+    requireSupabase();
+    await ensureInitialized();
 
-  // ---- Transactions ----
-  const addTransaction = useCallback(async (tx) => {
-    const newTx = {
-      id: tx.id || crypto.randomUUID(),
-      source: tx.source || 'manual',
+    const payload = normalizeAccountPayload({
+      id: crypto.randomUUID(),
       currency: 'EUR',
-      ...tx,
-      amount: Number(tx.amount),
-    };
+      initial_balance: 0,
+      ...account,
+    });
 
-    if (isSupabaseConfigured) {
-      const { id, label, amount, date, category, account_id, source, currency, external_id } = newTx;
-      const { data, error } = await supabase
-        .from('transactions')
-        .insert({ id, label, amount, date, category, account_id, source, currency, external_id })
-        .select().single();
-      if (error) throw error;
-      state = { ...state, transactions: [data, ...state.transactions] };
-    } else {
-      state = { ...state, transactions: [newTx, ...state.transactions] };
-    }
-    notify();
-    return newTx;
+    const { data, error } = await supabase
+      .from('accounts')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    setState((current) => ({
+      ...current,
+      accounts: [data, ...current.accounts],
+    }));
+
+    return data;
+  }, []);
+
+  const addTransaction = useCallback(async (transaction) => {
+    requireSupabase();
+    await ensureInitialized();
+
+    const payload = normalizeTransactionPayload(transaction);
+    const { data, error } = await supabase
+      .from('transactions')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    setState((current) => ({
+      ...current,
+      transactions: [data, ...current.transactions],
+    }));
+
+    return data;
   }, []);
 
   const deleteTransaction = useCallback(async (id) => {
-    if (isSupabaseConfigured) {
-      const { error } = await supabase.from('transactions').delete().eq('id', id);
-      if (error) throw error;
-    }
-    state = { ...state, transactions: state.transactions.filter((t) => t.id !== id) };
-    notify();
+    requireSupabase();
+    await ensureInitialized();
+
+    const { error } = await supabase.from('transactions').delete().eq('id', id);
+    if (error) throw error;
+
+    setState((current) => ({
+      ...current,
+      transactions: current.transactions.filter((transaction) => transaction.id !== id),
+    }));
   }, []);
 
   const updateTransaction = useCallback(async (id, patch) => {
-    if (isSupabaseConfigured) {
-      const { error } = await supabase.from('transactions').update(patch).eq('id', id);
-      if (error) throw error;
-    }
-    state = { ...state, transactions: state.transactions.map((t) => (t.id === id ? { ...t, ...patch } : t)) };
-    notify();
+    requireSupabase();
+    await ensureInitialized();
+
+    const normalizedPatch = {
+      ...patch,
+      amount: patch.amount === undefined ? undefined : Number(patch.amount),
+      date: patch.date ? normalizeDateValue(patch.date) : undefined,
+    };
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .update(normalizedPatch)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    setState((current) => ({
+      ...current,
+      transactions: current.transactions.map((transaction) => (transaction.id === id ? data : transaction)),
+    }));
   }, []);
 
-  // ---- Budgets ----
   const upsertBudget = useCallback(async (budget) => {
-    const existing = state.budgets.find((b) => b.category === budget.category);
-    let next;
+    requireSupabase();
+    await ensureInitialized();
+
+    const existing = state.budgets.find((entry) => entry.category === budget.category);
+
     if (existing) {
-      const updated = { ...existing, amount_limit: Number(budget.amount_limit) };
-      if (isSupabaseConfigured) {
-        const { error } = await supabase.from('budgets').update({ amount_limit: updated.amount_limit }).eq('id', existing.id);
-        if (error) throw error;
-      }
-      next = state.budgets.map((b) => (b.id === existing.id ? updated : b));
-    } else {
-      const newBudget = { id: crypto.randomUUID(), ...budget, amount_limit: Number(budget.amount_limit) };
-      if (isSupabaseConfigured) {
-        const { error } = await supabase.from('budgets').insert({ id: newBudget.id, category: newBudget.category, amount_limit: newBudget.amount_limit });
-        if (error) throw error;
-      }
-      next = [...state.budgets, newBudget];
+      const payload = {
+        category: budget.category,
+        amount_limit: Number(budget.amount_limit),
+      };
+
+      const { data, error } = await supabase
+        .from('budgets')
+        .update(payload)
+        .eq('id', existing.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setState((current) => ({
+        ...current,
+        budgets: current.budgets.map((entry) => (entry.id === existing.id ? data : entry)),
+      }));
+
+      return data;
     }
-    state = { ...state, budgets: next };
-    notify();
+
+    const payload = normalizeBudgetPayload(budget);
+    const { data, error } = await supabase
+      .from('budgets')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    setState((current) => ({
+      ...current,
+      budgets: [...current.budgets, data],
+    }));
+
+    return data;
   }, []);
 
   const deleteBudget = useCallback(async (id) => {
-    if (isSupabaseConfigured) {
-      const { error } = await supabase.from('budgets').delete().eq('id', id);
-      if (error) throw error;
-    }
-    state = { ...state, budgets: state.budgets.filter((b) => b.id !== id) };
-    notify();
+    requireSupabase();
+    await ensureInitialized();
+
+    const { error } = await supabase.from('budgets').delete().eq('id', id);
+    if (error) throw error;
+
+    setState((current) => ({
+      ...current,
+      budgets: current.budgets.filter((budget) => budget.id !== id),
+    }));
   }, []);
 
-  // ---- Investments ----
-  const addInvestment = useCallback(async (inv) => {
-    const newInv = { id: crypto.randomUUID(), ...inv, invested_amount: Number(inv.invested_amount) };
-    if (isSupabaseConfigured) {
-      const { id, name, platform, category, invested_amount, operations } = newInv;
-      const { data, error } = await supabase
-        .from('investments')
-        .insert({ id, name, platform, category, invested_amount, operations: operations || [] })
-        .select().single();
-      if (error) throw error;
-      state = { ...state, investments: [data, ...(state.investments || [])] };
-    } else {
-      state = { ...state, investments: [newInv, ...(state.investments || [])] };
-    }
-    notify();
-    return newInv;
+  const addInvestment = useCallback(async (investment) => {
+    requireSupabase();
+    await ensureInitialized();
+
+    const payload = normalizeInvestmentPayload({
+      id: crypto.randomUUID(),
+      ...investment,
+    });
+
+    const { data, error } = await supabase
+      .from('investments')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    setState((current) => ({
+      ...current,
+      investments: [data, ...current.investments],
+    }));
+
+    return data;
   }, []);
 
   const updateInvestment = useCallback(async (id, patch) => {
-    if (isSupabaseConfigured) {
-      const { error } = await supabase.from('investments').update(patch).eq('id', id);
-      if (error) throw error;
-    }
-    state = { ...state, investments: state.investments.map((i) => (i.id === id ? { ...i, ...patch } : i)) };
-    notify();
+    requireSupabase();
+    await ensureInitialized();
+
+    const normalizedPatch = {
+      ...patch,
+      invested_amount: patch.invested_amount === undefined ? undefined : Number(patch.invested_amount),
+      operations: patch.operations === undefined ? undefined : (Array.isArray(patch.operations) ? patch.operations : []),
+    };
+
+    const { data, error } = await supabase
+      .from('investments')
+      .update(normalizedPatch)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    setState((current) => ({
+      ...current,
+      investments: current.investments.map((investment) => (investment.id === id ? data : investment)),
+    }));
   }, []);
 
   const deleteInvestment = useCallback(async (id) => {
-    if (isSupabaseConfigured) {
-      const { error } = await supabase.from('investments').delete().eq('id', id);
-      if (error) throw error;
+    requireSupabase();
+    await ensureInitialized();
+
+    const { error } = await supabase.from('investments').delete().eq('id', id);
+    if (error) throw error;
+
+    setState((current) => ({
+      ...current,
+      investments: current.investments.filter((investment) => investment.id !== id),
+    }));
+  }, []);
+
+  const setSubscriptionCancelled = useCallback(async (groupKey, isCancelled) => {
+    requireSupabase();
+    await ensureInitialized();
+
+    const payload = {
+      group_key: groupKey,
+      is_cancelled: Boolean(isCancelled),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('subscription_preferences')
+      .upsert(payload, { onConflict: 'group_key' })
+      .select()
+      .single();
+
+    if (error) {
+      if (isMissingTableError(error)) {
+        throw new Error('La table subscription_preferences est absente. Applique la migration Supabase correspondante.');
+      }
+      throw error;
     }
-    state = { ...state, investments: state.investments.filter((i) => i.id !== id) };
-    notify();
+
+    setState((current) => ({
+      ...current,
+      subscriptionPreferences: [
+        data,
+        ...current.subscriptionPreferences.filter((preference) => preference.group_key !== groupKey),
+      ],
+    }));
+
+    return data;
   }, []);
 
   return {
@@ -377,6 +713,6 @@ export function useFinanceStore() {
     addInvestment,
     updateInvestment,
     deleteInvestment,
-    isSupabaseConfigured,
+    setSubscriptionCancelled,
   };
 }

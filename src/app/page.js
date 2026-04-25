@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { format, parseISO, subMonths, startOfMonth, endOfMonth, differenceInDays } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -14,14 +14,9 @@ import { DateRangePicker } from '@/components/DateRangePicker';
 import { Select } from '@/components/ui/Input';
 import { useFinanceStore } from '@/lib/store';
 import {
-  PERIODS,
-  computeMonthStats,
-  computePeriodStats,
   computeRangeStats,
-  computeCategoryBreakdown,
   filterByRange,
   computeBudgetStatus,
-  computeCapitalEvolution,
   computeTotalCapital,
   formatCurrency,
 } from '@/lib/finance';
@@ -30,16 +25,8 @@ import { CategoryIcon } from '@/components/CategoryIcon';
 export default function DashboardPage() {
   const { transactions, budgets, accounts, investments } = useFinanceStore();
   const [selectedAccountId, setSelectedAccountId] = useState('all');
-  const [mounted, setMounted] = useState(false);
-  
   const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd')); // Default to 1M
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const now = new Date();
+  const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   
   const daysDiff = useMemo(() => {
     const s = new Date(startDate);
@@ -73,10 +60,6 @@ export default function DashboardPage() {
     if (isNaN(s) || isNaN(e)) return { income: 0, expenses: 0, net: 0, savingsRate: 0 };
     return computeRangeStats(filteredTxs, s, e);
   }, [filteredTxs, startDate, endDate]);
-  const lastMonthStats = useMemo(
-    () => computeMonthStats(filteredTxs, subMonths(now, 1)),
-    [filteredTxs]
-  );
   
   const totalCapitalData = useMemo(
     () => computeTotalCapital(targetAccounts, targetInvestments, filteredTxs),
@@ -96,20 +79,12 @@ export default function DashboardPage() {
       .slice(0, 6);
   }, [filteredTxs, startDate, endDate]);
 
-  const currentMonthStats = useMemo(
-    () => computeMonthStats(filteredTxs, now),
-    [filteredTxs]
-  );
-  const expenseDiff = currentMonthStats.expenses - lastMonthStats.expenses;
-
   const alerts = budgetStatus.filter((b) => b.status === 'danger' || b.status === 'over');
 
   const avgPerMonth = {
     income: stats.income / monthsCount,
     expenses: stats.expenses / monthsCount,
   };
-
-  if (!mounted) return null;
 
   return (
     <div className="space-y-6">

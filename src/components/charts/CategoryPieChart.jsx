@@ -26,9 +26,9 @@ export function CategoryPieChart({ transactions, type = 'expense', startDate, en
         {type === 'income' ? 'Aucun revenu enregistré sur cette période' : 'Aucune dépense enregistrée sur cette période'}
       </div>
       ) : (
-      <div className="flex h-[280px] w-full items-center gap-4">
-        <div className="h-full flex-1">
-          <ResponsiveContainer width="100%" height="100%">
+      <div className="flex h-[280px] min-w-0 w-full items-center gap-4">
+        <div className="h-full min-w-0 flex-1">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={280}>
           <PieChart>
             <Pie
               data={data}

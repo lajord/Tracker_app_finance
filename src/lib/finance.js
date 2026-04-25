@@ -174,7 +174,7 @@ export function computeCategoryBreakdownRange(transactions, start, end, type = '
 // Budgets
 // ------------------------------------------------------------
 export function computeBudgetStatus(transactions, budgets, date = new Date()) {
-  const breakdown = computeCategoryBreakdown(transactions, 'current_month', date);
+  const breakdown = computeCategoryBreakdown(transactions, 'current_month', 'expense', date);
 
   return budgets
     .map((b) => {
@@ -214,16 +214,75 @@ export function computeAccountBalances(accounts, transactions) {
   });
 }
 
-export function computeTotalCapital(accounts, investments, transactions) {
+function normalizePlatformName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+export function computeAccountWealth(accounts, investments, transactions) {
   const balances = computeAccountBalances(accounts, transactions);
-  const liquidWealth = balances.reduce((sum, a) => sum + a.balance, 0);
-  const investedWealth = investments.reduce((sum, i) => sum + Number(i.invested_amount), 0);
+  const investmentAccounts = balances.filter((account) => account.type === 'investment');
+  const matchedInvestmentIds = new Set();
+
+  const accountBreakdown = balances.map((account) => {
+    if (account.type !== 'investment') {
+      return {
+        ...account,
+        cash: account.balance,
+        invested: 0,
+        total: account.balance,
+      };
+    }
+
+    const invested = (investments || []).reduce((sum, investment) => {
+      const matchesPlatform =
+        normalizePlatformName(investment.platform) === normalizePlatformName(account.name);
+
+      if (!matchesPlatform) return sum;
+      matchedInvestmentIds.add(investment.id);
+      return sum + Number(investment.invested_amount || 0);
+    }, 0);
+
+    const cash = account.balance - invested;
+
+    return {
+      ...account,
+      cash,
+      invested,
+      total: cash + invested,
+    };
+  });
+
+  const orphanInvestments = (investments || []).filter((investment) => {
+    if (matchedInvestmentIds.has(investment.id)) return false;
+
+    return !investmentAccounts.some(
+      (account) => normalizePlatformName(account.name) === normalizePlatformName(investment.platform)
+    );
+  });
+
+  const liquidWealth = accountBreakdown.reduce((sum, account) => sum + Number(account.cash || 0), 0);
+  const investedWealth =
+    accountBreakdown.reduce((sum, account) => sum + Number(account.invested || 0), 0) +
+    orphanInvestments.reduce((sum, investment) => sum + Number(investment.invested_amount || 0), 0);
+
   return {
-    total: liquidWealth + investedWealth,
+    accounts: accountBreakdown,
     liquid: liquidWealth,
     invested: investedWealth,
-    accounts: balances,
-    investments
+    orphanInvestments,
+    total: liquidWealth + investedWealth,
+  };
+}
+
+export function computeTotalCapital(accounts, investments, transactions) {
+  const wealth = computeAccountWealth(accounts, investments, transactions);
+  return {
+    total: wealth.total,
+    liquid: wealth.liquid,
+    invested: wealth.invested,
+    accounts: wealth.accounts,
+    investments,
+    orphanInvestments: wealth.orphanInvestments,
   };
 }
 

@@ -43,8 +43,8 @@ export function IncomeExpenseChart({ transactions, startDate, endDate }) {
           <p className="text-sm text-zinc-400">Historique des flux financiers</p>
         </div>
       </div>
-      <div className="h-72 w-full mt-4">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="mt-4 h-72 min-w-0 w-full">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={288}>
           <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
             <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fill: '#a1a1aa', fontSize: 12 }} dy={10} minTickGap={20} />
