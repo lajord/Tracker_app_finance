@@ -242,7 +242,7 @@ export function computeAccountWealth(accounts, investments, transactions) {
       return sum + Number(investment.invested_amount || 0);
     }, 0);
 
-    const cash = account.balance - invested;
+    const cash = account.balance;
 
     return {
       ...account,

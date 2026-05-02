@@ -183,10 +183,13 @@ function normalizeTransactionPayload(transaction) {
 }
 
 function normalizeBudgetPayload(budget) {
+  const now = new Date();
   return {
     id: budget.id || crypto.randomUUID(),
     category: budget.category,
     amount_limit: Number(budget.amount_limit || 0),
+    month: budget.month || (now.getMonth() + 1),
+    year: budget.year || now.getFullYear(),
   };
 }
 
@@ -487,6 +490,30 @@ export function useFinanceStore() {
     return data;
   }, []);
 
+  const updateAccount = useCallback(async (id, patch) => {
+    requireSupabase();
+    await ensureInitialized();
+
+    const normalizedPatch = {
+      ...patch,
+      initial_balance: patch.initial_balance === undefined ? undefined : Number(patch.initial_balance),
+    };
+
+    const { data, error } = await supabase
+      .from('accounts')
+      .update(normalizedPatch)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    setState((current) => ({
+      ...current,
+      accounts: current.accounts.map((account) => (account.id === id ? data : account)),
+    }));
+  }, []);
+
   const addTransaction = useCallback(async (transaction) => {
     requireSupabase();
     await ensureInitialized();
@@ -705,6 +732,7 @@ export function useFinanceStore() {
   return {
     ...snapshot,
     addAccount,
+    updateAccount,
     addTransaction,
     deleteTransaction,
     updateTransaction,
